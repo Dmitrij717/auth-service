@@ -16,6 +16,12 @@ type PostgresRepo struct {
 	pool *pgxpool.Pool
 }
 
+func NewPostgresRepo(pool *pgxpool.Pool) *PostgresRepo {
+	return &PostgresRepo{
+		pool: pool,
+	}
+}
+
 func (p PostgresRepo) CreateUser(
 	ctx context.Context,
 	user domain.User,
