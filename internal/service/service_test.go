@@ -15,6 +15,9 @@ type MockUserStore struct {
 	CreatedUser domain.User
 	CreatedErr  error
 	CreateCalls int
+
+	UserToReturn domain.User
+	GetUserErr   error
 }
 
 func (m *MockUserStore) CreateUser(
@@ -43,7 +46,11 @@ func (m *MockUserStore) GetUserByEmail(
 	ctx context.Context,
 	email string,
 ) (domain.User, error) {
-	return domain.User{}, nil
+	if m.GetUserErr != nil {
+		return domain.User{}, m.GetUserErr
+	}
+
+	return m.UserToReturn, nil
 }
 
 func TestService_Register(t *testing.T) {
@@ -154,6 +161,103 @@ func TestService_Register(t *testing.T) {
 			if err := bcrypt.CompareHashAndPassword([]byte(actual.PasswordHash), []byte(tt.password)); err != nil {
 				t.Fatalf("mismatch password")
 			}
+		})
+	}
+}
+
+func TestService_ValidateCredentials(t *testing.T) {
+	ctx := context.Background()
+
+	password := "qwerty14325"
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash - %v", err)
+	}
+
+	validUser := domain.User{
+		ID:           1,
+		Email:        "dmitrij@gmail.com",
+		PasswordHash: string(hash),
+	}
+
+	dbErr := errors.New("database connection failed")
+
+	tests := []struct {
+		name      string
+		email     string
+		password  string
+		storeUser domain.User
+		storeErr  error
+		wantValid bool
+		wantErr   error
+	}{
+		{
+			name:      "user found, password correct",
+			email:     validUser.Email,
+			password:  password,
+			storeUser: validUser,
+			wantValid: true,
+		},
+		{
+			name:      "user not found",
+			email:     "unknown@mail.com",
+			password:  "qwerty12345",
+			storeErr:  apperrors.ErrUserNotFound,
+			wantValid: false,
+		},
+		{
+			name:      "incorrect password",
+			email:     validUser.Email,
+			password:  "incorrect-password",
+			storeUser: validUser,
+			wantValid: false,
+		},
+		{
+			name:      "store error",
+			email:     validUser.Email,
+			password:  password,
+			storeErr:  dbErr,
+			wantValid: false,
+			wantErr:   dbErr,
+		},
+		{
+			name:     "incorrect hash",
+			email:    validUser.Email,
+			password: password,
+			storeUser: domain.User{
+				ID:           2,
+				Email:        validUser.Email,
+				PasswordHash: "invalid-hash",
+			},
+			wantValid: false,
+			wantErr:   bcrypt.ErrHashTooShort,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &MockUserStore{
+				UserToReturn: tt.storeUser,
+				GetUserErr:   tt.storeErr,
+			}
+
+			service := UserService{store: store}
+
+			actual, err := service.ValidateCredentials(
+				ctx,
+				tt.email,
+				tt.password,
+			)
+
+			if actual != tt.wantValid {
+				t.Fatalf("expected valid=%v, got %v", tt.wantValid, actual)
+			}
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+
 		})
 	}
 }

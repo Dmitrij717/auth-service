@@ -17,8 +17,24 @@ type UserStore interface {
 	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
 }
 
+type TokenManager interface {
+	GenerateToken(email string) (string, error)
+	RefreshToken(token string) (string, error)
+}
+
 type UserService struct {
-	store UserStore
+	store        UserStore
+	tokenManager TokenManager
+}
+
+func NewUserService(
+	store UserStore,
+	tokenManager TokenManager,
+) *UserService {
+	return &UserService{
+		store:        store,
+		tokenManager: tokenManager,
+	}
 }
 
 func (u *UserService) Register(ctx context.Context, email, password string) (domain.User, error) {
@@ -55,4 +71,49 @@ func (u *UserService) Register(ctx context.Context, email, password string) (dom
 	}
 
 	return created, nil
+}
+
+func (u *UserService) ValidateCredentials(
+	ctx context.Context,
+	email, password string,
+) (bool, error) {
+	user, err := u.store.GetUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrUserNotFound) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("get user by email: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(user.PasswordHash),
+		[]byte(password),
+	); err != nil {
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("compare password hash: %w", err)
+	}
+
+	return true, nil
+}
+
+func (u *UserService) GenerateToken(ctx context.Context, email string) (string, error) {
+	token, err := u.tokenManager.GenerateToken(email)
+	if err != nil {
+		return "", fmt.Errorf("generation failed - %w", err)
+	}
+
+	return token, nil
+}
+
+func (u *UserService) RefreshToken(ctx context.Context, token string) (string, error) {
+	refreshToken, err := u.tokenManager.RefreshToken(token)
+	if err != nil {
+		return "", fmt.Errorf("refresh failed - %w", err)
+	}
+
+	return refreshToken, nil
 }

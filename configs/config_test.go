@@ -5,7 +5,18 @@ import (
 	"testing"
 )
 
+func setRequiredEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("POSTGRES_USER", "test-user")
+	t.Setenv("POSTGRES_PASSWORD", "test-password")
+	t.Setenv("POSTGRES_PORT", "5432")
+	t.Setenv("POSTGRES_DB", "test-db")
+}
+
 func TestLoadConfig_WithPort(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("PORT", "9090")
 
 	conf, err := LoadConfig()
@@ -21,6 +32,7 @@ func TestLoadConfig_WithPort(t *testing.T) {
 }
 
 func TestLoadConfig_DefaultPort(t *testing.T) {
+	setRequiredEnv(t)
 	val, ok := os.LookupEnv("PORT")
 	t.Cleanup(func() {
 		if ok {
