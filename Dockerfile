@@ -21,5 +21,6 @@ RUN adduser -D -H appuser
 USER appuser
 
 EXPOSE 8080
+EXPOSE 9090
 
 ENTRYPOINT [ "./auth-service" ]
