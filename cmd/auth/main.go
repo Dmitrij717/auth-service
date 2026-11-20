@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/Dmitrij717/auth-service/configs"
+	"github.com/Dmitrij717/auth-service/internal/metrics"
+	"github.com/Dmitrij717/auth-service/internal/middleware"
 	"github.com/Dmitrij717/auth-service/internal/repository"
 	"github.com/Dmitrij717/auth-service/internal/service"
 	"github.com/Dmitrij717/auth-service/internal/token"
@@ -60,14 +62,37 @@ func main() {
 	verifyHandler := http_handlers.NewVerifyHandler(service)
 	registerHandler := http_handlers.NewRegisterHandler(service)
 
+	metrics, err := metrics.NewMetrics()
+	if err != nil {
+		log.Fatalf("metrics initialization: %v", err)
+	}
+
+	metricServer := http.Server{
+		Addr:    ":2112",
+		Handler: metrics.Handler(),
+	}
+
+	metricsLis, err := net.Listen("tcp", metricServer.Addr)
+	if err != nil {
+		log.Fatalf("listening metrics port: %v", err)
+	}
+
+	go func() {
+		if err := metricServer.Serve(metricsLis); err != nil {
+			log.Printf("metrics server: %v", err)
+		}
+	}()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/register", registerHandler.Handle)
 	mux.HandleFunc("/login", loginHandler.Handle)
 	mux.HandleFunc("/verify", verifyHandler.Handle)
 
+	handler := middleware.HTTPMetricMiddleware(metrics, mux)
+
 	httpServer := http.Server{
 		Addr:    ":" + config.Port,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	grpcHandler := grpc_server.NewServer(service)
@@ -136,7 +161,7 @@ func main() {
 
 		var wg sync.WaitGroup
 
-		wg.Add(2)
+		wg.Add(3)
 
 		go func() {
 			defer wg.Done()
@@ -146,6 +171,17 @@ func main() {
 				if closeErr := httpServer.Close(); closeErr != nil {
 					log.Printf("Close HTTP Server: %v", closeErr)
 				}
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			if err := metricServer.Shutdown(shutdownCtx); err != nil {
+				log.Printf("Shutdown Metrics Server: %v", err)
+			}
+
+			if err := metricServer.Close(); err != nil {
+				log.Printf("Close Metrics Server: %v", err)
 			}
 		}()
 

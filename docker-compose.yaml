@@ -30,6 +30,7 @@ services:
     ports: 
      - "8080:8080"
      - "9090:9090"
+     - "2112:2112"
     depends_on:
       postgres:
         condition: service_healthy

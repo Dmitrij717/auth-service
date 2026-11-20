@@ -22,5 +22,6 @@ USER appuser
 
 EXPOSE 8080
 EXPOSE 9090
+EXPOSE 2112
 
 ENTRYPOINT [ "./auth-service" ]
